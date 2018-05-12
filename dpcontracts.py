@@ -276,6 +276,7 @@ __version__ = "$Id$"
 __email__ = "jking@deadpixi.com"
 __status__ = "Alpha"
 
+import inspect
 from collections import namedtuple
 from functools import wraps
 from types import FunctionType
@@ -331,6 +332,12 @@ def arg_count(func):
     named, vargs, _, defs, kwonly, kwonlydefs, _ = getfullargspec(func)
     return len(named) + len(kwonly) + (1 if vargs else 0)
 
+def _clean_arg(arg):
+    """Clean/transform the argument. Right now it's just to make generators loopable multiple times."""
+    if inspect.isgenerator(arg):
+        return list(arg)
+    return arg
+
 def condition(description, predicate, precondition=False, postcondition=False, instance=False):
     assert isinstance(description, str), "contract descriptions must be strings"
     assert len(description) > 0, "contracts must have nonempty descriptions"
@@ -344,12 +351,14 @@ def condition(description, predicate, precondition=False, postcondition=False, i
 
         @wraps(f)
         def inner(*args, **kwargs):
-            rargs = build_call(f, *args, **kwargs) if not instance else args[0]
+            cleaned_args = tuple(_clean_arg(arg) for arg in args)
+            cleaned_kwargs = {k: _clean_arg(v) for k, v in kwargs.items()}
 
+            rargs = build_call(f, *cleaned_args, **cleaned_kwargs) if not instance else cleaned_args[0]
             if precondition:
                 assert predicate(rargs), description
 
-            result = f(*args, **kwargs)
+            result = f(*cleaned_args, **cleaned_kwargs)
 
             if instance:
                 assert predicate(rargs), description
